@@ -398,7 +398,7 @@ export function InventoryTable() {
                         {typeof item.current_stock === 'number' ? Number(item.current_stock.toFixed(2)).toLocaleString() : item.current_stock} {item.unit}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {t('inventory.minStock')}: {item.min_stock_level} {item.max_stock_level && `| ${t('inventory.maxStock')}: ${item.max_stock_level}`}
+                        {t('inventory.minStock')}: {item.min_stock_level} {item.max_stock_level ? `| ${t('inventory.maxStock')}: ${item.max_stock_level}` : ''}
                       </div>
                     </div>
                   </TableCell>

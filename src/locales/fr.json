@@ -412,6 +412,8 @@
     "outofstock": "En Rupture",
     "unit": "Unité",
     "description": "Description",
+    "minStock": "Stock Min",
+    "maxStock": "Stock Max",
     "minStockLevel": "Niveau de Stock Minimum",
     "maxStockLevel": "Niveau de Stock Maximum",
     "currentStock": "Stock Actuel",
