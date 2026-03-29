@@ -94,7 +94,7 @@ export async function POST(request: Request) {
             { filename }
         );
 
-        return new NextResponse(fileBuffer, {
+        return new NextResponse(new Uint8Array(fileBuffer), {
             status: 200,
             headers: {
                 'Content-Type': 'application/x-sqlite3',

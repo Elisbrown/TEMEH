@@ -73,6 +73,7 @@
     "close": "Close",
     "delete": "Delete",
     "edit": "Edit",
+    "date": "Date",
     "uploadImage": "Upload Image",
     "search": "Search",
     "actions": "Actions",
@@ -91,7 +92,8 @@
     "showMore": "Show All",
     "qty": "Qty",
     "price": "Price",
-    "purchasePrice": "Purchase Price"
+    "purchasePrice": "Purchase Price",
+    "invalidDate": "Invalid Date"
   },
     "dashboard": {
       "title": "Dashboard",
@@ -215,6 +217,7 @@
     "eventUpdateFailed": "Failed to update event",
     "createEvent": "Create Event",
     "lowStockCount": "{{count}} low stock",
+    "outOfStock": "Out of Stock",
     "accessDeniedTitle": "Access Denied",
     "accessDeniedDescription": "You do not have permission to view this page. Only Managers and Administrators can access the dashboard."
   },
@@ -700,7 +703,12 @@
     "thisMonth": "This Month",
     "categories": "Categories",
     "filterExpenses": "Filter Expenses",
-    "expenseRecords": "Expense Records"
+    "expenseRecords": "Expense Records",
+    "saveExpense": "Save Expense",
+    "editExpense": "Edit Expense",
+    "deleteExpense": "Delete Expense",
+    "confirmDelete": "Are you sure you want to delete this expense?",
+    "descriptionPlaceholder": "Describe the expense..."
   },
   "meals": {
     "title": "Menu",

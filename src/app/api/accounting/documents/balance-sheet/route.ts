@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const pdf = await generateBalanceSheetPDF(report, appSettings, undefined, lang);
     const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
 
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="balance-sheet-${asOfDate}.pdf"`,

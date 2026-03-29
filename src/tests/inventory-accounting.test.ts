@@ -28,6 +28,7 @@ async function runTests() {
             name: "Test Product",
             category: "Test Category",
             unit: "pcs",
+            unit_type: "Piece" as const,
             min_stock_level: 5,
             current_stock: 10,
             cost_per_unit: 100
@@ -36,8 +37,8 @@ async function runTests() {
         console.log(`✅ Create Inventory Item: Success (ID: ${newItem.id})`);
 
         await bulkAddInventoryItems([
-            { ...testItem, sku: `BULK-1-${Date.now()}`, name: "Bulk 1" },
-            { ...testItem, sku: `BULK-2-${Date.now()}`, name: "Bulk 2" }
+            { ...testItem, sku: `BULK-1-${Date.now()}`, name: "Bulk 1", unit_type: "Piece" },
+            { ...testItem, sku: `BULK-2-${Date.now()}`, name: "Bulk 2", unit_type: "Piece" }
         ]);
         console.log("✅ Bulk Add Inventory Items: Success");
 

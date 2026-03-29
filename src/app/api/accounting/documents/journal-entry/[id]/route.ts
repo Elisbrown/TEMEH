@@ -23,7 +23,7 @@ export async function GET(
     const pdf = await generateJournalEntryPDF(entry, appSettings, undefined, lang);
     const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
 
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="journal-entry-${id}.pdf"`,

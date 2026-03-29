@@ -112,11 +112,10 @@ async function handlePasswordReset(request: Request) {
 
 export async function POST(
     request: Request,
-    context: { params: { action: string[] } }
+    { params }: { params: Promise<{ action: string[] }> }
 ) {
-    // Await params if they are a Promise (Next.js app router)
-    const params = context.params instanceof Promise ? await context.params : context.params;
-    const action = params.action[0];
+    const { action: actionArray } = await params;
+    const action = actionArray[0];
 
     switch (action) {
         case 'login':

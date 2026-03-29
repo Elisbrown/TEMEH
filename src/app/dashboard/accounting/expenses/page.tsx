@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Receipt, TrendingDown, Calendar, Tag, FileText } from "lucide-react";
+import { Plus, Receipt, TrendingDown, Calendar, Tag, FileText, Pencil, Trash2, AlertCircle } from "lucide-react";
 import { useSettings } from "@/context/settings-context";
 import { useTranslation } from "@/hooks/use-translation";
 
@@ -50,6 +50,9 @@ export default function ExpensesPage() {
   const [showExpenseDialog, setShowExpenseDialog] = useState(false);
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterMonth, setFilterMonth] = useState<string>("");
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
   const [expenseForm, setExpenseForm] = useState({
     category: '',
     amount: '',
@@ -81,6 +84,46 @@ export default function ExpensesPage() {
       }
     } catch (error) {
       console.error('Failed to add expense:', error);
+    }
+  };
+
+  const handleUpdateExpense = async () => {
+    if (!editingExpense || !expenseForm.category || !expenseForm.amount) return;
+    try {
+      const res = await fetch(`/api/expenses?id=${editingExpense.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: categories.find(c => String(c.id) === expenseForm.category)?.name || expenseForm.category,
+          amount: parseFloat(expenseForm.amount),
+          date: expenseForm.date,
+          description: expenseForm.description || null,
+          receipt_url: expenseForm.receipt_url || null
+        })
+      });
+      if (res.ok) {
+        await fetchExpenses();
+        setEditingExpense(null);
+        setExpenseForm({ category: '', amount: '', date: new Date().toISOString().split('T')[0], description: '', receipt_url: '' });
+      }
+    } catch (error) {
+      console.error('Failed to update expense:', error);
+    }
+  };
+
+  const handleDeleteExpense = async () => {
+    if (!expenseToDelete) return;
+    try {
+      const res = await fetch(`/api/expenses?id=${expenseToDelete.id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        await fetchExpenses();
+        setShowDeleteDialog(false);
+        setExpenseToDelete(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete expense:', error);
     }
   };
 
@@ -319,7 +362,27 @@ export default function ExpensesPage() {
                           ) : '-'}
                         </TableCell>
                         <TableCell>
-                          <Button size="sm" variant="ghost">Edit</Button>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => {
+                              const catId = categories.find(c => c.name === exp.category)?.id;
+                              setExpenseForm({
+                                category: String(catId || ''),
+                                amount: String(exp.amount),
+                                date: exp.date.split('T')[0],
+                                description: exp.description || '',
+                                receipt_url: exp.receipt_url || ''
+                              });
+                              setEditingExpense(exp);
+                            }}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => {
+                              setExpenseToDelete(exp);
+                              setShowDeleteDialog(true);
+                            }}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -330,6 +393,88 @@ export default function ExpensesPage() {
           </Card>
         </div>
       </main>
+
+      {/* Edit Expense Dialog */}
+      <Dialog open={!!editingExpense} onOpenChange={(open) => !open && setEditingExpense(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('expenses.editExpense')}</DialogTitle>
+            <DialogDescription>{t('expenses.description')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('expenses.category')}</Label>
+              <Select value={expenseForm.category} onValueChange={(val) => setExpenseForm(prev => ({ ...prev, category: val }))}>
+                <SelectTrigger><SelectValue placeholder={t('expenses.selectCategory') || "Select category"} /></SelectTrigger>
+                <SelectContent>
+                  {categories.map(cat => (
+                    <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Amount ({currencySymbol})</Label>
+              <Input type="number" placeholder="0" value={expenseForm.amount} onChange={(e) => setExpenseForm(prev => ({ ...prev, amount: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Date</Label>
+              <Input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm(prev => ({ ...prev, date: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('expenses.descriptionLabel') || 'Description'}</Label>
+              <Textarea 
+                placeholder={t('expenses.descriptionPlaceholder') || "Describe the expense..."} 
+                value={expenseForm.description} 
+                onChange={(e) => setExpenseForm(prev => ({ ...prev, description: e.target.value }))} 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('expenses.receiptUrl')}</Label>
+              <Input type="url" placeholder="https://..." value={expenseForm.receipt_url} onChange={(e) => setExpenseForm(prev => ({ ...prev, receipt_url: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingExpense(null)}>{t('common.cancel')}</Button>
+            <Button onClick={handleUpdateExpense}>{t('expenses.saveExpense') || t('common.save')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <div className="flex items-center gap-4 text-destructive mb-2">
+              <div className="bg-destructive/10 p-2 rounded-full">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <DialogTitle>{t('expenses.deleteExpense')}</DialogTitle>
+            </div>
+            <DialogDescription>
+              {t('expenses.confirmDelete')}
+              {expenseToDelete && (
+                <div className="mt-4 p-4 bg-muted rounded-md text-sm">
+                  <div className="flex justify-between">
+                    <span className="font-semibold">{expenseToDelete.category}</span>
+                    <span className="font-bold">{formatCurrency(expenseToDelete.amount)}</span>
+                  </div>
+                  <div className="mt-1 text-muted-foreground truncate">{expenseToDelete.description}</div>
+                  <div className="mt-1 text-xs">{new Date(expenseToDelete.date).toLocaleDateString()}</div>
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteExpense}>
+              {t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

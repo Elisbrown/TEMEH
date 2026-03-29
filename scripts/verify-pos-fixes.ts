@@ -8,9 +8,9 @@ console.log("Verifying POS Fixes...");
 
 try {
     // 1. Verify schemas are correct (no __tmp_ references)
-    const ordersSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name='orders'").get().sql;
-    const orderItemsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name='order_items'").get().sql;
-    const heldCartsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE name='held_carts'").get().sql;
+    const ordersSchema = (db.prepare("SELECT sql FROM sqlite_master WHERE name='orders'").get() as any).sql;
+    const orderItemsSchema = (db.prepare("SELECT sql FROM sqlite_master WHERE name='order_items'").get() as any).sql;
+    const heldCartsSchema = (db.prepare("SELECT sql FROM sqlite_master WHERE name='held_carts'").get() as any).sql;
 
     if (orderItemsSchema.includes('__tmp_')) {
         console.error("FAIL: order_items still contains __tmp_ reference");

@@ -90,7 +90,8 @@
     "time": "Heure",
     "showLess": "Voir moins",
     "showMore": "Voir tout",
-    "purchasePrice": "Prix d'Achat"
+    "purchasePrice": "Prix d'Achat",
+    "invalidDate": "Date invalide"
   },
   "dashboard": {
     "title": "Tableau de Bord",
@@ -98,7 +99,7 @@
       "dailySales": "Ventes Quotidiennes",
       "dailyExpenditure": "Dépenses Quotidiennes",
       "totalOrders": "Total des Commandes",
-      "outOfStock": "En Rupture",
+      "outOfStock": "Rupture de stock",
       "lowStockCount": "{{count}} stock faible",
       "suspendedOrders": "Ventes en Suspens",
       "active": "Active",
@@ -646,7 +647,12 @@
     "thisMonth": "Ce Mois",
     "categories": "Catégories",
     "filterExpenses": "Filtrer les Dépenses",
-    "expenseRecords": "Registres des Dépenses"
+    "expenseRecords": "Registres des Dépenses",
+    "saveExpense": "Enregistrer la dépense",
+    "editExpense": "Modifier la dépense",
+    "deleteExpense": "Supprimer la dépense",
+    "confirmDelete": "Êtes-vous sûr de vouloir supprimer cette dépense ?",
+    "descriptionPlaceholder": "Décrivez la dépense..."
   },
   "meals": {
     "title": "Menu",

@@ -62,7 +62,7 @@ export async function GET(request: Request) {
             console.error('Failed to record backup:', error);
         }
 
-        return new NextResponse(fileBuffer, {
+        return new NextResponse(new Uint8Array(fileBuffer), {
             status: 200,
             headers: {
                 'Content-Type': 'application/x-sqlite3',

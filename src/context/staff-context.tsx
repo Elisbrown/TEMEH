@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, ReactNode, useCallback, use
 import { useAuth } from './auth-context';
 import { useToast } from "@/hooks/use-toast";
 
-export type StaffRole = "Super Admin" | "Manager" | "Accountant" | "Cashier";
+export type StaffRole = "Super Admin" | "Manager" | "Accountant" | "Cashier" | "Stock Manager" | "Chef";
 
 export type StaffMember = {
   id: string; // Add ID from DB

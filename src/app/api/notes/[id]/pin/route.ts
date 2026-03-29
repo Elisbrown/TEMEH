@@ -1,10 +1,19 @@
-import { NextRequest } from 'next/server'
+
+import { NextRequest, NextResponse } from 'next/server'
 import Database from 'better-sqlite3'
 import path from 'path'
+import { addActivityLog } from '@/lib/db/activity-logs';
+import { getStaffByEmail } from '@/lib/db/staff';
 
 function getDb(): Database.Database {
-  const dbPath = process.env.SQLITE_DB_PATH || path.join(process.cwd(), 'temeh.db')
+  const dbPath = path.join(process.cwd(), 'temeh.db')
   return new Database(dbPath)
+}
+
+async function getActorId(email?: string) {
+    if (!email || email === "system") return null;
+    const user = await getStaffByEmail(email);
+    return user ? Number(user.id) : null;
 }
 
 export async function PUT(
@@ -12,9 +21,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const db = getDb()
-
+  
   try {
-    const { is_pinned } = await request.json()
+    const { is_pinned, userEmail } = await request.json()
     const { id } = await params
     const noteId = parseInt(id)
 
@@ -23,11 +32,11 @@ export async function PUT(
       SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `)
-
+    
     const result = stmt.run(is_pinned ? 1 : 0, noteId)
-
+    
     if (result.changes === 0) {
-      return Response.json(
+      return NextResponse.json(
         { error: 'Note not found' },
         { status: 404 }
       )
@@ -47,15 +56,24 @@ export async function PUT(
       FROM notes 
       WHERE id = ?
     `)
-
+    
     const note: any = getStmt.get(noteId)
-
+    
     if (!note) {
-      return Response.json(
+      return NextResponse.json(
         { error: 'Note not found' },
         { status: 404 }
       )
     }
+
+    const actorId = await getActorId(userEmail);
+    await addActivityLog(
+        actorId,
+        'NOTE_PIN',
+        `${is_pinned ? 'Pinned' : 'Unpinned'} note: ${note.title}`,
+        note.title,
+        { is_pinned }
+    );
 
     const updatedNote = {
       ...note,
@@ -64,10 +82,10 @@ export async function PUT(
       is_pinned: Boolean(note.is_pinned)
     }
 
-    return Response.json(updatedNote)
+    return NextResponse.json(updatedNote)
   } catch (error) {
     console.error('Error updating note pin status:', error)
-    return Response.json(
+    return NextResponse.json(
       { error: 'Failed to update note pin status' },
       { status: 500 }
     )
@@ -75,3 +93,4 @@ export async function PUT(
     db.close()
   }
 } 
+ 

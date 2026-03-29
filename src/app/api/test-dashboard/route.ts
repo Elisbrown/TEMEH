@@ -37,7 +37,7 @@ export async function GET() {
       const tables = tablesStmt.all()
       results.tests.tablesExist = {
         status: 'PASS',
-        tables: tables.map(t => t.name)
+        tables: (tables as any[]).map(t => t.name)
       }
     } catch (error) {
       results.tests.tablesExist = {
@@ -49,7 +49,7 @@ export async function GET() {
     // Test 3: Products query
     try {
       const productsStmt = db.prepare('SELECT COUNT(*) as count FROM products')
-      const productsCount = productsStmt.get().count
+      const productsCount = (productsStmt.get() as any).count
       results.tests.productsQuery = {
         status: 'PASS',
         count: productsCount
@@ -64,7 +64,7 @@ export async function GET() {
     // Test 4: Orders query
     try {
       const ordersStmt = db.prepare('SELECT COUNT(*) as count FROM orders')
-      const ordersCount = ordersStmt.get().count
+      const ordersCount = (ordersStmt.get() as any).count
       results.tests.ordersQuery = {
         status: 'PASS',
         count: ordersCount
@@ -79,7 +79,7 @@ export async function GET() {
     // Test 5: Order items query
     try {
       const orderItemsStmt = db.prepare('SELECT COUNT(*) as count FROM order_items')
-      const orderItemsCount = orderItemsStmt.get().count
+      const orderItemsCount = (orderItemsStmt.get() as any).count
       results.tests.orderItemsQuery = {
         status: 'PASS',
         count: orderItemsCount
@@ -94,7 +94,7 @@ export async function GET() {
     // Test 6: Users/Staff query
     try {
       const usersStmt = db.prepare('SELECT COUNT(*) as count FROM users')
-      const usersCount = usersStmt.get().count
+      const usersCount = (usersStmt.get() as any).count
       results.tests.usersQuery = {
         status: 'PASS',
         count: usersCount
@@ -109,7 +109,7 @@ export async function GET() {
     // Test 7: Categories query
     try {
       const categoriesStmt = db.prepare('SELECT COUNT(*) as count FROM categories')
-      const categoriesCount = categoriesStmt.get().count
+      const categoriesCount = (categoriesStmt.get() as any).count
       results.tests.categoriesQuery = {
         status: 'PASS',
         count: categoriesCount
@@ -124,7 +124,7 @@ export async function GET() {
     // Test 8: Tables query
     try {
       const tablesStmt = db.prepare('SELECT COUNT(*) as count FROM tables')
-      const tablesCount = tablesStmt.get().count
+      const tablesCount = (tablesStmt.get() as any).count
       results.tests.tablesQuery = {
         status: 'PASS',
         count: tablesCount
@@ -139,7 +139,7 @@ export async function GET() {
     // Test 9: Settings query
     try {
       const settingsStmt = db.prepare('SELECT COUNT(*) as count FROM settings')
-      const settingsCount = settingsStmt.get().count
+      const settingsCount = (settingsStmt.get() as any).count
       results.tests.settingsQuery = {
         status: 'PASS',
         count: settingsCount

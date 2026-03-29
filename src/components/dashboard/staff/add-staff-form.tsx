@@ -45,7 +45,7 @@ const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email." }),
   phone: z.string().optional(),
   hireDate: z.date().optional(),
-  role: z.enum(["Super Admin", "Manager", "Accountant", "Cashier"] as const),
+  role: z.enum(["Super Admin", "Manager", "Accountant", "Cashier", "Stock Manager"] as const),
   emergency_contact_name: z.string().optional(),
   emergency_contact_relationship: z.string().optional(),
   emergency_contact_phone: z.string().optional(),
@@ -211,6 +211,8 @@ export function AddStaffForm({ onAddStaff }: AddStaffFormProps) {
                       <SelectItem value="Manager">Manager</SelectItem>
                       <SelectItem value="Accountant">Accountant</SelectItem>
                       <SelectItem value="Cashier">Cashier</SelectItem>
+                      <SelectItem value="Stock Manager">Stock Manager</SelectItem>
+                      <SelectItem value="Chef">Chef</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const pdf = await generateCashFlowPDF(report, appSettings, undefined, lang);
     const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
 
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="cash-flow-${startDate}-to-${endDate}.pdf"`,

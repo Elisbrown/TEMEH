@@ -1,10 +1,19 @@
-import { NextRequest } from 'next/server'
+
+import { NextRequest, NextResponse } from 'next/server'
 import Database from 'better-sqlite3'
 import path from 'path'
+import { addActivityLog } from '@/lib/db/activity-logs';
+import { getStaffByEmail } from '@/lib/db/staff';
 
 function getDb(): Database.Database {
-  const dbPath = process.env.SQLITE_DB_PATH || path.join(process.cwd(), 'temeh.db')
+  const dbPath = path.join(process.cwd(), 'temeh.db')
   return new Database(dbPath)
+}
+
+async function getActorId(email?: string) {
+    if (!email || email === "system") return null;
+    const user = await getStaffByEmail(email);
+    return user ? Number(user.id) : null;
 }
 
 export async function PUT(
@@ -12,14 +21,14 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const db = getDb()
-
+  
   try {
-    const { title, content, tags } = await request.json()
+    const { title, content, tags, userEmail } = await request.json()
     const { id } = await params
     const noteId = parseInt(id)
 
     if (!title || !content) {
-      return Response.json(
+      return NextResponse.json(
         { error: 'Title and content are required' },
         { status: 400 }
       )
@@ -30,15 +39,24 @@ export async function PUT(
       SET title = ?, content = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `)
-
+    
     const result = stmt.run(title, content, JSON.stringify(tags || []), noteId)
-
+    
     if (result.changes === 0) {
-      return Response.json(
+      return NextResponse.json(
         { error: 'Note not found' },
         { status: 404 }
       )
     }
+
+    const actorId = await getActorId(userEmail);
+    await addActivityLog(
+        actorId,
+        'NOTE_UPDATE',
+        `Updated note: ${title}`,
+        title,
+        { tags: tags || [] }
+    );
 
     const updatedNote = {
       id: noteId.toString(),
@@ -48,10 +66,10 @@ export async function PUT(
       updated_at: new Date().toISOString()
     }
 
-    return Response.json(updatedNote)
+    return NextResponse.json(updatedNote)
   } catch (error) {
     console.error('Error updating note:', error)
-    return Response.json(
+    return NextResponse.json(
       { error: 'Failed to update note' },
       { status: 500 }
     )
@@ -65,25 +83,39 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const db = getDb()
-
+  
   try {
     const { id } = await params
     const noteId = parseInt(id)
+    const { searchParams } = new URL(request.url);
+    const userEmail = searchParams.get('userEmail');
+
+    // Fetch note for logging before deletion
+    const getStmt = db.prepare('SELECT title FROM notes WHERE id = ?')
+    const note: any = getStmt.get(noteId)
 
     const stmt = db.prepare('DELETE FROM notes WHERE id = ?')
     const result = stmt.run(noteId)
-
+    
     if (result.changes === 0) {
-      return Response.json(
+      return NextResponse.json(
         { error: 'Note not found' },
         { status: 404 }
       )
     }
 
-    return Response.json({ success: true })
+    const actorId = await getActorId(userEmail || undefined);
+    await addActivityLog(
+        actorId,
+        'NOTE_DELETE',
+        `Deleted note: ${note?.title || id}`,
+        note?.title || String(id)
+    );
+
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error deleting note:', error)
-    return Response.json(
+    return NextResponse.json(
       { error: 'Failed to delete note' },
       { status: 500 }
     )
@@ -91,3 +123,4 @@ export async function DELETE(
     db.close()
   }
 } 
+ 
