@@ -30,6 +30,7 @@ import { RevenueDistributionChart } from '@/components/dashboard/charts/revenue-
 import { useAuth } from '@/context/auth-context'
 
 type DashboardData = {
+  dailyProfit: number;
   totalRevenue: number;
   totalSales: number;
   totalExpenses: number;
@@ -114,7 +115,14 @@ export default function DashboardPage() {
 
     switch (period) {
       case 'today':
-        from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 7, 0, 0);
+        to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0);
+        
+        // If current time is before 7 AM, "today" actually refers to yesterday's business day
+        if (now.getHours() < 7) {
+          from.setDate(from.getDate() - 1);
+          to.setDate(to.getDate() - 1);
+        }
         break;
       case 'yesterday':
         const yesterday = new Date(now);
@@ -170,6 +178,7 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Failed to fetch dashboard data:", error)
       setData({
+        dailyProfit: 0,
         totalRevenue: 0,
         totalSales: 0,
         totalExpenses: 0,
@@ -308,6 +317,13 @@ export default function DashboardPage() {
                 value={formatCurrency(data.totalRevenue, settings.defaultCurrency)}
                 change={formatChange(data.revenueChange)}
                 icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
+                trendColor={getChangeColor(data.revenueChange)}
+              />
+              <KpiCard
+                title={t('dashboard.dailyProfit')}
+                value={formatCurrency(data.dailyProfit, settings.defaultCurrency)}
+                change={formatChange(data.revenueChange)}
+                icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
                 trendColor={getChangeColor(data.revenueChange)}
               />
               <KpiCard

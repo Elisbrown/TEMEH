@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { useOrders, type Order, type OrderStatus } from "@/context/order-context"
 import { useAuth } from "@/context/auth-context"
@@ -20,7 +21,7 @@ import { formatDistanceToNow } from "date-fns"
 import { OrderDetailsDialog } from "./order-details-dialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { CalendarIcon, Download, ChevronLeft, ChevronRight } from "lucide-react"
+import { CalendarIcon, Download, ChevronLeft, ChevronRight, DollarSign, TrendingUp, Receipt } from "lucide-react"
 import { format } from "date-fns"
 import { cn, formatCurrency } from "@/lib/utils"
 import { useSettings } from "@/context/settings-context"
@@ -49,6 +50,32 @@ export function OrdersView() {
     from: undefined,
     to: undefined,
   })
+  
+  const [stats, setStats] = React.useState<{ totalSales: number, totalExpenses: number, dailyProfit: number } | null>(null);
+
+  React.useEffect(() => {
+    // Fetch stats based on date range
+    const fetchStats = async () => {
+      let url = '/api/dashboard-stats';
+      if (dateRange.from && dateRange.to) {
+        url += `?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`;
+      }
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          setStats({
+            totalSales: data.totalSales || 0, // Income from orders
+            totalExpenses: data.totalExpenses || 0,
+            dailyProfit: data.dailyProfit || 0
+          });
+        }
+      } catch (error) {
+        console.error("Failed to fetch export stats", error);
+      }
+    };
+    fetchStats();
+  }, [dateRange]);
 
   React.useEffect(() => {
     const orderId = searchParams.get('id');
@@ -98,23 +125,45 @@ export function OrdersView() {
 
   const handleExportCSV = () => {
     const ordersToExport = getFilteredExportOrders();
-    const headers = ["Order ID", "Placed By", "Items", "Total", "Payment Method", "Status", "Timestamp"];
-    const rows = ordersToExport.map(order => {
-        const sub = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        const total = sub - (order.discount || 0) + (order.tax || 0);
-        const cashierName = order.cashierName || staff.find(s => parseInt(s.id) === order.cashier_id)?.name || '';
-        const itemsCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
-        return [
-            order.id, cashierName, itemsCount,
-            total, order.payment_method || '',
-            order.status, order.timestamp.toISOString()
-        ];
+    const headers = [
+      "Order ID", "Item Name", "Quantity", "Cost Price", "Selling Price", "Total Price", "Profit", "Payment Method", "Salesperson", "Date/Time"
+    ];
+    
+    const rows: string[] = [];
+    
+    ordersToExport.forEach(order => {
+        const orderIdPart = order.id.includes('-') ? order.id.split('-').slice(1).join('-') : order.id;
+        const cashierName = order.cashierName || staff.find(s => parseInt(s.id) === order.cashier_id)?.name || '—';
+        const paymentMethod = order.payment_method || '—';
+        const timestamp = format(new Date(order.timestamp), 'PP p');
+        
+        order.items.forEach(item => {
+            const costPrice = item.cost_per_unit || 0;
+            const sellingPrice = item.price;
+            const totalPrice = sellingPrice * item.quantity;
+            const totalCost = costPrice * item.quantity;
+            const profit = totalPrice - totalCost;
+            
+            rows.push([
+                `"${orderIdPart}"`,
+                `"${item.name}"`,
+                item.quantity,
+                costPrice,
+                sellingPrice,
+                totalPrice,
+                profit,
+                `"${paymentMethod}"`,
+                `"${cashierName}"`,
+                `"${timestamp}"`
+            ].join(","));
+        });
     });
-    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+
+    let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `orders_export_${new Date().toISOString()}.csv`);
+    link.setAttribute("download", `sales_items_export_${new Date().toISOString()}.csv`);
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
     setExportOpen(false);
   }
@@ -122,12 +171,45 @@ export function OrdersView() {
   const handleExportPDF = () => {
     const ordersToExport = getFilteredExportOrders();
     const userInfo = user ? { name: user.name, email: user.email, address: "Douala, Cameroon", phone: "+237 600000000" } : undefined;
-    exportOrdersToPDF(ordersToExport, `Orders Report - ${statusFilter}`, staff, userInfo);
+    const range = dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : undefined;
+    exportOrdersToPDF(ordersToExport, `Sales Items Report - ${statusFilter}`, staff, userInfo, settings as any, range, stats);
     setExportOpen(false);
   }
 
   return (
     <>
+        {stats && (
+            <div className="grid gap-4 md:grid-cols-3 mb-4">
+                <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{t('dashboard.totalSales') || 'Total Sales'}</CardTitle>
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{formatCurrency(stats.totalSales, settings.defaultCurrency)}</div>
+                </CardContent>
+                </Card>
+                <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{t('dashboard.dailyExpenditure') || 'Total Expenses'}</CardTitle>
+                    <Receipt className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{formatCurrency(stats.totalExpenses, settings.defaultCurrency)}</div>
+                </CardContent>
+                </Card>
+                <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{t('dashboard.totalProfit') || 'Total Profit'}</CardTitle>
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    <div className="text-2xl font-bold">{formatCurrency(stats.dailyProfit, settings.defaultCurrency)}</div>
+                </CardContent>
+                </Card>
+            </div>
+        )}
+
         <div className="flex items-center justify-between gap-4 mb-4">
             <div className="flex items-center gap-2">
                 <Input

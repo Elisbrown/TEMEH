@@ -56,22 +56,24 @@ export function getOrderById(id: string, db: Database.Database = getDb()): Order
         if (item.item_type === 'inventory_item') {
             // Re-fetch from inventory_items if name is null (since we joined with products)
             if (!item.name) {
-                const invItem = db.prepare('SELECT name, category, image FROM inventory_items WHERE id = ?').get(item.id) as any;
+                const invItem = db.prepare('SELECT name, category, image, cost_per_unit FROM inventory_items WHERE id = ?').get(item.id) as any;
                 if (invItem) {
                     return {
                         ...item,
                         id: `inv_${item.id}`,
                         name: invItem.name,
                         category: invItem.category,
-                        image: invItem.image
+                        image: invItem.image,
+                        cost_per_unit: invItem.cost_per_unit || 0
                     };
                 }
             }
-            return { ...item, id: `inv_${item.id}` };
+            return { ...item, id: `inv_${item.id}`, cost_per_unit: 0 };
         }
         return {
             ...item,
-            id: String(item.id)
+            id: String(item.id),
+            cost_per_unit: 0
         };
     });
 
@@ -122,7 +124,8 @@ export async function getOrders(): Promise<Order[]> {
                 p.image as product_image,
                 ii.name as inv_name,
                 ii.category as inv_category,
-                ii.image as inv_image
+                ii.image as inv_image,
+                ii.cost_per_unit as inv_cost
             FROM orders o
             LEFT JOIN order_items oi ON o.id = oi.order_id
             LEFT JOIN products p ON oi.product_id = p.id AND oi.item_type = 'product'
@@ -163,6 +166,7 @@ export async function getOrders(): Promise<Order[]> {
                     quantity: row.item_quantity,
                     category: isInv ? row.inv_category : row.product_category,
                     image: isInv ? row.inv_image : row.product_image,
+                    cost_per_unit: isInv ? (row.inv_cost || 0) : 0,
                 });
             }
         }

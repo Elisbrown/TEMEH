@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Pagination } from "@/components/ui/pagination";
 import { Plus, Receipt, TrendingDown, Calendar, Tag, FileText, Pencil, Trash2, AlertCircle } from "lucide-react";
 import { useSettings } from "@/context/settings-context";
 import { useTranslation } from "@/hooks/use-translation";
@@ -60,6 +61,10 @@ export default function ExpensesPage() {
     description: '',
     receipt_url: ''
   });
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const { t } = useTranslation();
 
@@ -165,6 +170,17 @@ export default function ExpensesPage() {
     }
     return true;
   });
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCategory, filterMonth]);
+
+  const totalPages = Math.ceil(filteredExpenses.length / itemsPerPage) || 1;
+  const paginatedExpenses = filteredExpenses.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
   const thisMonthExpenses = expenses.filter(e => {
@@ -340,7 +356,7 @@ export default function ExpensesPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredExpenses.map(exp => (
+                    paginatedExpenses.map(exp => (
                       <TableRow key={exp.id}>
                         <TableCell>
                           {exp.date && !isNaN(Date.parse(exp.date)) 
@@ -380,7 +396,7 @@ export default function ExpensesPage() {
                               setExpenseToDelete(exp);
                               setShowDeleteDialog(true);
                             }}>
-                              <Trash2 className="h-4 w-4" />
+                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </TableCell>
@@ -389,6 +405,18 @@ export default function ExpensesPage() {
                   )}
                 </TableBody>
               </Table>
+              
+              {!loading && filteredExpenses.length > 0 && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    itemsPerPage={itemsPerPage}
+                    totalItems={filteredExpenses.length}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -18,6 +18,7 @@ export type OrderItem = {
   persistedQuantity?: number; // The original quantity from a persisted order (minimum allowed)
   unit_type?: string;
   max_stock?: number;
+  cost_per_unit?: number;
 };
 
 export type OrderStatus = "Pending" | "In Progress" | "Ready" | "Completed" | "Canceled";

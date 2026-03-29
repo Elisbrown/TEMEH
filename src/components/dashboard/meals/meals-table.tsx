@@ -86,9 +86,9 @@ export function MealsTable() {
     }
 
     const getStatusTextKey = (quantity: number) => {
-        if (quantity <= 0) return 'inventory.outofstock'
-        if (quantity < 10) return 'inventory.lowstock'
-        return 'inventory.instock'
+        if (quantity <= 0) return 'inventory.outOfStock'
+        if (quantity < 10) return 'inventory.lowStock'
+        return 'inventory.inStock'
     }
 
     const getStatusFromQuantity = (quantity: number) => {

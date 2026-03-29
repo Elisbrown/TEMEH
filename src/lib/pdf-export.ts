@@ -112,28 +112,102 @@ const addUniversalHeaderAndFooter = async (doc: jsPDF, title: string, userInfo?:
         doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 10, { align: 'right' });
     }
 };
-export const exportOrdersToPDF = async (orders: Order[], title: string = 'Orders Report', staff: any[] = [], userInfo?: UserInfo, settings?: Settings) => {
-  const doc = new jsPDF() as jsPDFWithAutoTable;
+export const exportOrdersToPDF = async (
+    orders: Order[], 
+    title: string = 'Orders Report', 
+    staff: any[] = [], 
+    userInfo?: UserInfo, 
+    settings?: Settings,
+    dateRange?: { from: Date; to: Date },
+    stats?: { totalSales: number, totalExpenses: number, dailyProfit: number } | null
+) => {
+  const doc = new jsPDF({ orientation: 'landscape', format: 'a4' }) as jsPDFWithAutoTable;
   
+  const fullTitle = dateRange && dateRange.from && dateRange.to 
+    ? `${title} (${format(dateRange.from, 'PP')} - ${format(dateRange.to, 'PP')})`
+    : title;
+
   // Prepare table data
-  const tableColumn = ["Order ID", "Status", "Items", "Total", "Date"];
-  const tableRows = orders.map(order => {
-    const total = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const itemsSummary = order.items.map(item => `${item.quantity}x ${item.name}`).join(', ');
-        return [
-      order.id,
-      order.status,
-      itemsSummary,
-      `XAF ${total.toLocaleString()}`,
-      format(new Date(order.timestamp), 'PP p')
-    ];
+  const tableColumn = ["Order ID", "Item Name", "Qty", "Cost Price", "Selling Price", "Total Price", "Profit", "Payment", "Salesperson", "Date"];
+  const tableRows: any[][] = [];
+
+  orders.forEach(order => {
+    const orderIdPart = order.id.includes('-') ? order.id.split('-').slice(1).join('-') : order.id;
+    const cashierName = order.cashierName || staff.find((s: any) => parseInt(s.id) === order.cashier_id)?.name || '—';
+    const paymentMethod = order.payment_method || '—';
+    const timestamp = format(new Date(order.timestamp), 'PP p');
+    
+    order.items.forEach(item => {
+        const costPrice = item.cost_per_unit || 0;
+        const sellingPrice = item.price;
+        const totalPrice = sellingPrice * item.quantity;
+        const profit = totalPrice - (costPrice * item.quantity);
+        
+        tableRows.push([
+          orderIdPart,
+          item.name,
+          String(item.quantity),
+          `XAF ${costPrice.toLocaleString()}`,
+          `XAF ${sellingPrice.toLocaleString()}`,
+          `XAF ${totalPrice.toLocaleString()}`,
+          `XAF ${profit.toLocaleString()}`,
+          paymentMethod,
+          cashierName,
+          timestamp
+        ]);
+    });
   });
+
+  let currentY = 45;
+
+  if (stats) {
+    // Total Sales Box
+    doc.setDrawColor(200);
+    doc.setFillColor(245, 245, 245);
+    doc.roundedRect(14, 40, 60, 16, 2, 2, 'FD');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text('Total Sales', 18, 46);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0);
+    doc.text(`XAF ${stats.totalSales.toLocaleString()}`, 18, 52);
+
+    // Total Expenses Box
+    doc.setDrawColor(200);
+    doc.setFillColor(245, 245, 245);
+    doc.roundedRect(78, 40, 60, 16, 2, 2, 'FD');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text('Total Expenses', 82, 46);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0);
+    doc.text(`XAF ${stats.totalExpenses.toLocaleString()}`, 82, 52);
+
+    // Total Profit Box
+    doc.setDrawColor(200);
+    doc.setFillColor(245, 245, 245);
+    doc.roundedRect(142, 40, 60, 16, 2, 2, 'FD');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text('Total Profit', 146, 46);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0);
+    doc.text(`XAF ${stats.dailyProfit.toLocaleString()}`, 146, 52);
+    
+    currentY = 65;
+  }
 
   // Generate table
   autoTable(doc, {
     head: [tableColumn],
     body: tableRows,
-    startY: 45,
+    startY: currentY,
     theme: 'grid',
     styles: {
       fontSize: 8,
@@ -149,10 +223,10 @@ export const exportOrdersToPDF = async (orders: Order[], title: string = 'Orders
     alternateRowStyles: {
       fillColor: [245, 245, 245],
     },
-    margin: { top: 45, bottom: 20 }
+    margin: { top: currentY, bottom: 20 }
   });
 
-  await addUniversalHeaderAndFooter(doc, title, userInfo, settings);
+  await addUniversalHeaderAndFooter(doc, fullTitle, userInfo, settings);
 
   // Save the PDF
   doc.save(`orders_export_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.pdf`);

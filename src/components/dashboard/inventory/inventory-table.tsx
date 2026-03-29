@@ -251,7 +251,7 @@ export function InventoryTable() {
             <SelectContent>
               {statusOptions.map(status => (
                 <SelectItem key={status} value={status}>
-                  {status === 'All' ? t('inventory.allStatuses') : t(`inventory.${status.toLowerCase().replace(' ', '')}`)}
+                  {status === 'All' ? t('inventory.allStatuses') : t(`inventory.${status === 'In Stock' ? 'inStock' : status === 'Low Stock' ? 'lowStock' : 'outOfStock'}`)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -417,7 +417,7 @@ export function InventoryTable() {
                   </TableCell>
                   <TableCell>
                     <Badge variant={getStatusVariant(item.status)}>
-                      {t(`inventory.${item.status.toLowerCase().replace(' ', '')}`)}
+                      {t(`inventory.${item.status === 'In Stock' ? 'inStock' : item.status === 'Low Stock' ? 'lowStock' : 'outOfStock'}`)}
                     </Badge>
                   </TableCell>
                   <TableCell>

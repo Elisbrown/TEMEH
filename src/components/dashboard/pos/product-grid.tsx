@@ -106,7 +106,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
             >
               {product.quantity <= 0 && (
                 <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
-                  <Badge variant="destructive">{t('inventory.outofstock')}</Badge>
+                  <Badge variant="destructive">{t('inventory.outOfStock')}</Badge>
                 </div>
               )}
               <CardContent className="p-0">

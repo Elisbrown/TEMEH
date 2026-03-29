@@ -11,6 +11,22 @@ function getDb(): Database.Database {
   return new Database(dbPath)
 }
 
+function getBusinessDayBounds(date: Date = new Date()) {
+  const start = new Date(date)
+  start.setHours(7, 0, 0, 0)
+  
+  const end = new Date(date)
+  end.setHours(20, 0, 0, 0)
+  
+  // If current time is before 7 AM, they belong to the previous business day
+  if (date.getHours() < 7) {
+    start.setDate(start.getDate() - 1)
+    end.setDate(end.getDate() - 1)
+  }
+  
+  return { start, end }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const fromDate = searchParams.get('from')
@@ -27,33 +43,32 @@ export async function GET(request: NextRequest) {
     const todayStr = today.toISOString().split('T')[0]
     const yesterdayStr = yesterday.toISOString().split('T')[0]
 
+    // Default business day bounds for "today"
+    const { start: todayBizStart, end: todayBizEnd } = getBusinessDayBounds(today);
+    const todayBizStartStr = todayBizStart.toISOString();
+    const todayBizEndStr = todayBizEnd.toISOString();
+
     // Build date filter clause
-    const dateFilter = fromDate && toDate ? `AND DATE(timestamp) BETWEEN ? AND ?` : '';
-    const dateParams = fromDate && toDate ? [fromDate.split('T')[0], toDate.split('T')[0]] : [];
+    // If fromDate/toDate are provided, we use BETWEEN ? AND ? (with time)
+    // If not, we use the business day bounds for "today"
+    const dateFilter = fromDate && toDate ? `AND timestamp BETWEEN ? AND ?` : `AND timestamp BETWEEN ? AND ?`;
+    const dateParams = fromDate && toDate ? [fromDate, toDate] : [todayBizStartStr, todayBizEndStr];
 
     // Total orders (within date range if specified)
-    const totalOrdersQuery = `SELECT COUNT(*) as count FROM orders ${fromDate && toDate ? 'WHERE DATE(timestamp) BETWEEN ? AND ?' : ''}`;
-    const totalOrders = fromDate && toDate
-      ? (db.prepare(totalOrdersQuery).get(...dateParams) as { count: number }).count
-      : (db.prepare(totalOrdersQuery).get() as { count: number }).count;
+    const totalOrdersQuery = `SELECT COUNT(*) as count FROM orders WHERE 1=1 ${dateFilter}`;
+    const totalOrders = (db.prepare(totalOrdersQuery).get(...dateParams) as { count: number }).count;
 
     // Completed orders (within date range)
     const completedOrdersQuery = `SELECT COUNT(*) as count FROM orders WHERE status = 'Completed' ${dateFilter}`;
-    const completedOrders = fromDate && toDate
-      ? (db.prepare(completedOrdersQuery).get(...dateParams) as { count: number }).count
-      : (db.prepare(completedOrdersQuery).get() as { count: number }).count;
+    const completedOrders = (db.prepare(completedOrdersQuery).get(...dateParams) as { count: number }).count;
 
     // Canceled orders (within date range)
     const canceledOrdersQuery = `SELECT COUNT(*) as count FROM orders WHERE status = 'Canceled' ${dateFilter}`;
-    const canceledOrders = fromDate && toDate
-      ? (db.prepare(canceledOrdersQuery).get(...dateParams) as { count: number }).count
-      : (db.prepare(canceledOrdersQuery).get() as { count: number }).count;
+    const canceledOrders = (db.prepare(canceledOrdersQuery).get(...dateParams) as { count: number }).count;
 
     // Pending orders (within date range)
     const pendingOrdersQuery = `SELECT COUNT(*) as count FROM orders WHERE status IN ('Pending', 'In Progress') ${dateFilter}`;
-    const pendingOrders = fromDate && toDate
-      ? (db.prepare(pendingOrdersQuery).get(...dateParams) as { count: number }).count
-      : (db.prepare(pendingOrdersQuery).get() as { count: number }).count;
+    const pendingOrders = (db.prepare(pendingOrdersQuery).get(...dateParams) as { count: number }).count;
 
     // Suspended orders (held carts)
     const suspendedOrdersQuery = `SELECT COUNT(*) as count FROM held_carts`;
@@ -66,23 +81,32 @@ export async function GET(request: NextRequest) {
       FROM orders
       WHERE status = 'Completed' ${dateFilter}
     `;
-    const totalSales = fromDate && toDate
-      ? (db.prepare(totalSalesQuery).get(...dateParams) as { total: number }).total || 0
-      : (db.prepare(totalSalesQuery).get() as { total: number }).total || 0;
+    const totalSales = (db.prepare(totalSalesQuery).get(...dateParams) as { total: number }).total || 0;
 
-    // Total Expenses (from journal_entries)
-    const expensesDateFilter = fromDate && toDate ? `AND DATE(entry_date) BETWEEN ? AND ?` : '';
-    const totalExpensesQuery = `
-      SELECT COALESCE(SUM(total_amount), 0) as total
-      FROM journal_entries
-      WHERE entry_type = 'Expense' ${expensesDateFilter}
+    // Cost Price Calculation (for Profit)
+    const totalCostPriceQuery = `
+      SELECT COALESCE(SUM(oi.quantity * COALESCE(i.cost_per_unit, 0)), 0) as total
+      FROM order_items oi
+      LEFT JOIN inventory_items i ON CAST(oi.product_id AS INTEGER) = i.id AND oi.item_type = 'inventory_item'
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.status = 'Completed' ${dateFilter.replace('timestamp', 'o.timestamp')}
     `;
-    const totalExpenses = fromDate && toDate
-      ? (db.prepare(totalExpensesQuery).get(...dateParams) as { total: number }).total || 0
-      : (db.prepare(totalExpensesQuery).get() as { total: number }).total || 0;
+    const totalCostPrice = (db.prepare(totalCostPriceQuery).get(...dateParams) as { total: number }).total || 0;
+
+    // Total Expenses (from expenses table)
+    const expensesDateFilter = `AND DATE(date) BETWEEN DATE(?) AND DATE(?)`;
+    const totalExpensesQuery = `
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM expenses
+      WHERE 1=1 ${expensesDateFilter}
+    `;
+    const totalExpenses = (db.prepare(totalExpensesQuery).get(...dateParams) as { total: number }).total || 0;
 
     // Total Revenue (Sales - Expenses)
     const totalRevenue = totalSales - totalExpenses;
+    
+    // Daily Profit (Sales - CostPrice - Expenses)
+    const dailyProfit = totalSales - (totalCostPrice + totalExpenses);
 
     // "Daily" metrics should reflect the current selected period vs previous equivalent period
     // If no period specified, it defaults to Today
@@ -101,36 +125,40 @@ export async function GET(request: NextRequest) {
       const prevStart = new Date(start.getTime() - duration - 86400000); // 1 day gap or just shift
       const prevEnd = new Date(start.getTime() - 86400000);
 
-      const prevParams = [prevStart.toISOString().split('T')[0], prevEnd.toISOString().split('T')[0]];
+      const prevParams = [prevStart.toISOString(), prevEnd.toISOString()];
 
       prevTotalSales = (db.prepare(`
         SELECT COALESCE(SUM(total), 0) as total
         FROM orders
-        WHERE status = 'Completed' AND DATE(timestamp) BETWEEN ? AND ?
+        WHERE status = 'Completed' AND timestamp BETWEEN ? AND ?
       `).get(...prevParams) as { total: number }).total || 0;
 
       prevTotalExpenses = (db.prepare(`
-        SELECT COALESCE(SUM(total_amount), 0) as total
-        FROM journal_entries
-        WHERE entry_type = 'Expense' AND DATE(entry_date) BETWEEN ? AND ?
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM expenses
+        WHERE date BETWEEN ? AND ?
       `).get(...prevParams) as { total: number }).total || 0;
     } else {
-      // Default comparison for "Today" is "Yesterday"
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      // Default comparison for "Today" is "Yesterday's Business Day"
+      const yesterdayStart = new Date(todayBizStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      
+      const yesterdayEnd = new Date(todayBizEnd);
+      yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+
+      const prevParams = [yesterdayStart.toISOString(), yesterdayEnd.toISOString()];
 
       prevTotalSales = (db.prepare(`
         SELECT COALESCE(SUM(total), 0) as total
         FROM orders
-        WHERE status = 'Completed' AND DATE(timestamp) = ?
-      `).get(yesterdayStr) as { total: number }).total || 0;
+        WHERE status = 'Completed' AND timestamp BETWEEN ? AND ?
+      `).get(...prevParams) as { total: number }).total || 0;
 
       prevTotalExpenses = (db.prepare(`
-        SELECT COALESCE(SUM(total_amount), 0) as total
-        FROM journal_entries
-        WHERE entry_type = 'Expense' AND DATE(entry_date) = ?
-      `).get(yesterdayStr) as { total: number }).total || 0;
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM expenses
+        WHERE date BETWEEN ? AND ?
+      `).get(...prevParams) as { total: number }).total || 0;
     }
 
     const prevTotalRevenue = prevTotalSales - prevTotalExpenses;
@@ -142,11 +170,24 @@ export async function GET(request: NextRequest) {
 
     // Total Orders in period
     const periodOrders = totalOrders;
-    const prevPeriodOrders = fromDate && toDate
-      ? (db.prepare(`SELECT COUNT(*) as count FROM orders WHERE status = 'Completed' AND DATE(timestamp) BETWEEN ? AND ?`)
-        .get(new Date(new Date(fromDate).getTime() - (new Date(toDate).getTime() - new Date(fromDate).getTime()) - 86400000).toISOString().split('T')[0],
-          new Date(new Date(fromDate).getTime() - 86400000).toISOString().split('T')[0]) as { count: number }).count
-      : (db.prepare(`SELECT COUNT(*) as count FROM orders WHERE status = 'Completed' AND DATE(timestamp) = ?`).get(yesterdayStr) as { count: number }).count;
+    
+    let prevPeriodOrders = 0;
+    if (fromDate && toDate) {
+      const start = new Date(fromDate);
+      const end = new Date(toDate);
+      const duration = end.getTime() - start.getTime();
+      const prevStart = new Date(start.getTime() - duration - 86400000);
+      const prevEnd = new Date(start.getTime() - 86400000);
+      prevPeriodOrders = (db.prepare(`SELECT COUNT(*) as count FROM orders WHERE status = 'Completed' AND timestamp BETWEEN ? AND ?`)
+        .get(prevStart.toISOString(), prevEnd.toISOString()) as { count: number }).count;
+    } else {
+      const yesterdayStart = new Date(todayBizStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      const yesterdayEnd = new Date(todayBizEnd);
+      yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
+      prevPeriodOrders = (db.prepare(`SELECT COUNT(*) as count FROM orders WHERE status = 'Completed' AND timestamp BETWEEN ? AND ?`)
+        .get(yesterdayStart.toISOString(), yesterdayEnd.toISOString()) as { count: number }).count;
+    }
 
     const ordersChange = prevPeriodOrders > 0 ? ((periodOrders - prevPeriodOrders) / prevPeriodOrders) * 100 : 0;
 
@@ -166,9 +207,8 @@ export async function GET(request: NextRequest) {
     `).get(thisWeekStart.toISOString().split('T')[0]) as { total: number, count: number });
 
     const thisWeekExpenses = (db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) as total
-      FROM journal_entries WHERE entry_type = 'Expense'
-      AND DATE(entry_date) >= ?
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM expenses WHERE DATE(date) >= ?
     `).get(thisWeekStart.toISOString().split('T')[0]) as { total: number }).total || 0;
 
     const lastWeekSales = (db.prepare(`
@@ -178,9 +218,8 @@ export async function GET(request: NextRequest) {
     `).get(lastWeekStart.toISOString().split('T')[0], lastWeekEnd.toISOString().split('T')[0]) as { total: number, count: number });
 
     const lastWeekExpenses = (db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) as total
-      FROM journal_entries WHERE entry_type = 'Expense'
-      AND DATE(entry_date) BETWEEN ? AND ?
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM expenses WHERE DATE(date) BETWEEN ? AND ?
     `).get(lastWeekStart.toISOString().split('T')[0], lastWeekEnd.toISOString().split('T')[0]) as { total: number }).total || 0;
 
     const thisWeekRevenue = (thisWeekSales.total || 0) - thisWeekExpenses;
@@ -198,9 +237,8 @@ export async function GET(request: NextRequest) {
     `).get(thisMonthStart.toISOString().split('T')[0]) as { total: number, count: number });
 
     const thisMonthExpenses = (db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) as total
-      FROM journal_entries WHERE entry_type = 'Expense'
-      AND DATE(entry_date) >= ?
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM expenses WHERE DATE(date) >= ?
     `).get(thisMonthStart.toISOString().split('T')[0]) as { total: number }).total || 0;
 
     const lastMonthSales = (db.prepare(`
@@ -210,9 +248,8 @@ export async function GET(request: NextRequest) {
     `).get(lastMonthStart.toISOString().split('T')[0], lastMonthEnd.toISOString().split('T')[0]) as { total: number, count: number });
 
     const lastMonthExpenses = (db.prepare(`
-      SELECT COALESCE(SUM(total_amount), 0) as total
-      FROM journal_entries WHERE entry_type = 'Expense'
-      AND DATE(entry_date) BETWEEN ? AND ?
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM expenses WHERE DATE(date) BETWEEN ? AND ?
     `).get(lastMonthStart.toISOString().split('T')[0], lastMonthEnd.toISOString().split('T')[0]) as { total: number }).total || 0;
 
     const thisMonthRevenue = (thisMonthSales.total || 0) - thisMonthExpenses;
@@ -258,14 +295,12 @@ export async function GET(request: NextRequest) {
         COUNT(oi.id) as item_count
       FROM orders o
       LEFT JOIN order_items oi ON o.id = oi.order_id
-      WHERE o.status = 'Completed' ${dateFilter}
+      WHERE o.status = 'Completed' ${dateFilter.replace('timestamp', 'o.timestamp')}
       GROUP BY o.id
       ORDER BY o.timestamp DESC
       LIMIT 10
     `;
-    const recentSales = fromDate && toDate
-      ? db.prepare(recentSalesQuery).all(...dateParams)
-      : db.prepare(recentSalesQuery).all();
+    const recentSales = db.prepare(recentSalesQuery).all(...dateParams);
 
     // Top selling products - within date range if specified
     const topProductsQuery = `
@@ -284,9 +319,7 @@ export async function GET(request: NextRequest) {
       ORDER BY total_sold DESC
       LIMIT 5
     `;
-    const topSellingProducts = fromDate && toDate
-      ? db.prepare(topProductsQuery).all(...dateParams)
-      : db.prepare(topProductsQuery).all();
+    const topSellingProducts = db.prepare(topProductsQuery).all(...dateParams);
 
     // Staff performance data (mock for now)
 
@@ -351,9 +384,7 @@ export async function GET(request: NextRequest) {
       WHERE o.status = 'Completed' ${dateFilter.replace('timestamp', 'o.timestamp')}
       GROUP BY category_name
     `)
-    const categorySalesData = fromDate && toDate
-      ? categorySalesStmt.all(...dateParams) as { category_name: string, sales: number }[]
-      : categorySalesStmt.all() as { category_name: string, sales: number }[];
+    const categorySalesData = categorySalesStmt.all(...dateParams) as { category_name: string, sales: number }[];
 
     // Ensure all categories with sales are included, plus empty predefined ones
     const seenCategories = new Set(categorySalesData.map(s => (s.category_name || '').toLowerCase()));
@@ -387,9 +418,7 @@ export async function GET(request: NextRequest) {
       ORDER BY total_value DESC
       LIMIT 6
     `)
-    const productSalesData = fromDate && toDate
-      ? productSalesStmt.all(...dateParams) as { item_label: string, total_value: number }[]
-      : productSalesStmt.all() as { item_label: string, total_value: number }[];
+    const productSalesData = productSalesStmt.all(...dateParams) as { item_label: string, total_value: number }[];
 
     const revenueDistribution = productSalesData.map((row, index) => ({
       label: row.item_label,
@@ -406,8 +435,8 @@ export async function GET(request: NextRequest) {
     const waiters = waitersStmt.all() as any[]
 
     // Calculate previous period for trends
-    const currentFrom = new Date(fromDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
-    const currentTo = new Date(toDate || new Date().toISOString());
+    const currentFrom = new Date(fromDate || todayBizStartStr);
+    const currentTo = new Date(toDate || todayBizEndStr);
     const duration = currentTo.getTime() - currentFrom.getTime();
     const prevFrom = new Date(currentFrom.getTime() - duration).toISOString();
     const prevTo = new Date(currentFrom.getTime()).toISOString(); // Use currentFrom as prevTo
@@ -420,11 +449,9 @@ export async function GET(request: NextRequest) {
         COALESCE(SUM(total) / NULLIF(COUNT(*), 0), 0) as team_avg_order_value,
         COUNT(CASE WHEN status = 'Completed' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) as team_completion_rate
       FROM orders
-      WHERE 1=1 ${dateFilter.replace('timestamp', 'timestamp')}
+      WHERE 1=1 ${dateFilter}
     `)
-    const teamStats = (fromDate && toDate)
-      ? teamStatsStmt.get(...dateParams) as any
-      : teamStatsStmt.get() as any
+    const teamStats = teamStatsStmt.get(...dateParams) as any
 
     const team_total_revenue = teamStats.total_revenue || 1
     const team_avg_aov = teamStats.team_avg_order_value || 0
@@ -437,12 +464,10 @@ export async function GET(request: NextRequest) {
           COALESCE(SUM(total), 0) as total_revenue,
           COUNT(CASE WHEN status = 'Completed' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) as completion_rate
         FROM orders
-        WHERE cashier_id = ? ${dateFilter.replace('timestamp', 'timestamp')}
+        WHERE cashier_id = ? ${dateFilter}
       `)
 
-      const stats = (fromDate && toDate)
-        ? currentStatsStmt.get(staff.id, ...dateParams) as any
-        : currentStatsStmt.get(staff.id) as any
+      const stats = currentStatsStmt.get(staff.id, ...dateParams) as any
 
       // Previous stats for trend
       const prevStatsStmt = db.prepare(`
@@ -513,9 +538,8 @@ export async function GET(request: NextRequest) {
       expenses: [] as any[]
     };
 
-    // Determine if we are in "Hourly Mode" (Single Day) or "Daily Mode" (Range)
-    const startDate = fromDate ? new Date(fromDate) : new Date(new Date().setDate(new Date().getDate() - 30));
-    const endDate = toDate ? new Date(toDate) : new Date();
+    const startDate = fromDate ? new Date(fromDate) : todayBizStart;
+    const endDate = toDate ? new Date(toDate) : todayBizEnd;
 
     // Check if start and end date are the same day (or very close)
     // We check if the duration is less than or equal to 26 hours (allowing for some buffer)
@@ -528,29 +552,28 @@ export async function GET(request: NextRequest) {
       const previousStartDate = new Date(startDate.getTime() - durationMs);
       const previousEndDate = new Date(endDate.getTime() - durationMs);
 
-      // Fetch ALL orders for current and previous ranges to bucket in JS
       const currentOrders = db.prepare(`
         SELECT timestamp, total as amount, 'current' as period
         FROM orders
-        WHERE timestamp BETWEEN ? AND ?
+        WHERE timestamp BETWEEN ? AND ? AND status = 'Completed'
       `).all(startDate.toISOString(), endDate.toISOString()) as any[];
 
       const previousOrders = db.prepare(`
         SELECT timestamp, total as amount, 'previous' as period
         FROM orders
-        WHERE timestamp BETWEEN ? AND ?
+        WHERE timestamp BETWEEN ? AND ? AND status = 'Completed'
       `).all(previousStartDate.toISOString(), previousEndDate.toISOString()) as any[];
 
       const currentExpenses = db.prepare(`
-        SELECT entry_date as timestamp, total_amount as amount, 'current' as period
-        FROM journal_entries
-        WHERE entry_type = 'Expense' AND entry_date BETWEEN ? AND ?
+        SELECT date as timestamp, amount as amount, 'current' as period
+        FROM expenses
+        WHERE date BETWEEN ? AND ?
       `).all(startDate.toISOString(), endDate.toISOString()) as any[];
 
       const previousExpenses = db.prepare(`
-        SELECT entry_date as timestamp, total_amount as amount, 'previous' as period
-        FROM journal_entries
-        WHERE entry_type = 'Expense' AND entry_date BETWEEN ? AND ?
+        SELECT date as timestamp, amount as amount, 'previous' as period
+        FROM expenses
+        WHERE date BETWEEN ? AND ?
       `).all(previousStartDate.toISOString(), previousEndDate.toISOString()) as any[];
 
       // Generate 24 hourly buckets
@@ -616,33 +639,31 @@ export async function GET(request: NextRequest) {
 
       const currentDateList = getDaysArray(new Date(startDate), new Date(endDate));
 
-      // Fetch daily data for current range - both counts and amounts
       const currentOrdersDaily = db.prepare(`
         SELECT DATE(timestamp) as date, COUNT(*) as count, SUM(total) as total
         FROM orders
-        WHERE DATE(timestamp) BETWEEN ? AND ?
+        WHERE DATE(timestamp) BETWEEN ? AND ? AND status = 'Completed'
         GROUP BY date
       `).all(startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]) as { date: string, count: number, total: number }[];
 
       const currentExpensesDaily = db.prepare(`
-        SELECT DATE(entry_date) as date, SUM(total_amount) as total
-        FROM journal_entries
-        WHERE entry_type = 'Expense' AND DATE(entry_date) BETWEEN ? AND ?
+        SELECT DATE(date) as date, SUM(amount) as total
+        FROM expenses
+        WHERE DATE(date) BETWEEN ? AND ?
         GROUP BY date
       `).all(startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]) as { date: string, total: number }[];
 
-      // Fetch daily data for previous range - both counts and amounts
       const previousOrdersDaily = db.prepare(`
         SELECT DATE(timestamp) as date, COUNT(*) as count, SUM(total) as total
         FROM orders
-        WHERE DATE(timestamp) BETWEEN ? AND ?
+        WHERE DATE(timestamp) BETWEEN ? AND ? AND status = 'Completed'
         GROUP BY date
       `).all(previousStartDate.toISOString().split('T')[0], previousEndDate.toISOString().split('T')[0]) as { date: string, count: number, total: number }[];
 
       const previousExpensesDaily = db.prepare(`
-        SELECT DATE(entry_date) as date, SUM(total_amount) as total
-        FROM journal_entries
-        WHERE entry_type = 'Expense' AND DATE(entry_date) BETWEEN ? AND ?
+        SELECT DATE(date) as date, SUM(amount) as total
+        FROM expenses
+        WHERE DATE(date) BETWEEN ? AND ?
         GROUP BY date
       `).all(previousStartDate.toISOString().split('T')[0], previousEndDate.toISOString().split('T')[0]) as { date: string, total: number }[];
 
@@ -674,9 +695,11 @@ export async function GET(request: NextRequest) {
     }
 
     return Response.json({
+      dailyProfit,  // New field: Daily Profit
       totalRevenue, // Now equals Sales - Expenses
-      totalSales,   // New field: Income from orders
-      totalExpenses, // New field: Total expenses
+      totalSales,   // Income from orders
+      totalCostPrice, // Cost price calculated
+      totalExpenses, // Total expenses
       totalOrders,
       completedOrders,
       canceledOrders,

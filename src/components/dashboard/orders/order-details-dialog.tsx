@@ -24,7 +24,9 @@ import { useTranslation } from "@/hooks/use-translation"
 import { PaymentDialog, type PaymentDetails } from "@/components/dashboard/pos/payment-dialog"
 import { SplitOrderDialog } from "./split-order-dialog"
 import { MergeOrderDialog } from "./merge-order-dialog"
-import { MinusCircle, PlusCircle, Trash2, Download, AlertCircle } from "lucide-react"
+import { MinusCircle, PlusCircle, Trash2, Download, AlertCircle, Edit, Check, X } from "lucide-react"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label"
 import { CancelOrderDialog } from "../cancel-order-dialog";
 import { useStaff } from "@/context/staff-context";
 import { useActivityLog } from "@/context/activity-log-context";
@@ -53,6 +55,10 @@ export function OrderDetailsDialog({
   const [isMergeOpen, setMergeOpen] = useState(false)
   const [isCancelOpen, setCancelOpen] = useState(false)
   const [editableOrder, setEditableOrder] = useState<Order | null>(order)
+  const [isEditingPayment, setIsEditingPayment] = useState(false)
+  const [editPaymentMethod, setEditPaymentMethod] = useState(order?.payment_method || '')
+
+  const canEditPayment = user?.role === 'Manager' || user?.role === 'Super Admin'
 
   const getBase64Image = async (url: string): Promise<string> => {
     const response = await fetch(url);
@@ -289,7 +295,29 @@ export function OrderDetailsDialog({
 
   React.useEffect(() => {
     setEditableOrder(order)
+    setEditPaymentMethod(order?.payment_method || '')
+    setIsEditingPayment(false)
   }, [order])
+
+  const handleSavePaymentMethod = async () => {
+    if (!editableOrder) return;
+    try {
+      const updated = { ...editableOrder, payment_method: editPaymentMethod };
+      await updateOrder(updated);
+      setEditableOrder(updated);
+      setIsEditingPayment(false);
+      toast({
+        title: t('toasts.orderUpdated'),
+        description: t('orders.paymentMethodUpdated') || `Payment method updated to ${editPaymentMethod}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: t('toasts.updateFailed'),
+        description: error.message || 'Failed to update payment method.',
+      });
+    }
+  }
 
 
   if (!order || !editableOrder) return null
@@ -395,6 +423,48 @@ export function OrderDetailsDialog({
                     <p><span className="font-medium">{t('common.time') || 'Time'}:</span> {formatDistanceToNow(new Date(order.cancelled_at), { addSuffix: true })}</p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Payment Method Section */}
+            {order.status === 'Completed' && (
+              <div className="flex items-center justify-between bg-muted/50 p-3 rounded-md">
+                <div>
+                  <p className="text-sm text-muted-foreground">{t('pos.paymentMethod')}</p>
+                  {isEditingPayment ? (
+                    <div className="mt-2">
+                      <RadioGroup
+                        value={editPaymentMethod}
+                        onValueChange={setEditPaymentMethod}
+                        className="flex gap-3"
+                      >
+                        {['cash', 'card', 'mobile'].map(method => (
+                          <div key={method} className="flex items-center space-x-1">
+                            <RadioGroupItem value={method} id={`edit-${method}`} />
+                            <Label htmlFor={`edit-${method}`} className="text-sm capitalize cursor-pointer">
+                              {t(`pos.${method}`)}
+                            </Label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+                      <div className="flex gap-2 mt-2">
+                        <Button size="sm" variant="default" className="h-7 gap-1" onClick={handleSavePaymentMethod}>
+                          <Check className="h-3 w-3" /> {t('common.save')}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 gap-1" onClick={() => { setIsEditingPayment(false); setEditPaymentMethod(editableOrder?.payment_method || ''); }}>
+                          <X className="h-3 w-3" /> {t('common.cancel')}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="font-medium capitalize">{editableOrder?.payment_method || '—'}</p>
+                  )}
+                </div>
+                {canEditPayment && !isEditingPayment && (
+                  <Button size="sm" variant="outline" className="gap-1" onClick={() => setIsEditingPayment(true)}>
+                    <Edit className="h-3 w-3" /> {t('orders.editPaymentMethod') || 'Edit'}
+                  </Button>
+                )}
               </div>
             )}
 
